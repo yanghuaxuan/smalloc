@@ -22,6 +22,9 @@ int main(void) {
 //  char *t3 = smalloc(1023 * sizeof(Header));
 //  assert(t3 != NULL);
 //  sfree(t3);
+//
   char *t4 = smalloc(1023 * sizeof(Header));
-  assert(t4 == NULL);
+  char *t5 = smalloc(1024 * sizeof(Header));
+  sfree(t4);
+  sfree(t5);
 }

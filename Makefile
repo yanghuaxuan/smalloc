@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -Wall -pedantic -std=c99 -g -ggdb
+CFLAGS := -Wall -pedantic  -g -ggdb -fsanitize=address
 
 test: test.c smalloc.c
 	$(CC) $(CFLAGS) $^ -o test
