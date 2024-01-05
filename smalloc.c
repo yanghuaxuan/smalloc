@@ -33,6 +33,13 @@ page_t* tail = NULL;
 
 static inline void page_insert(page_t* node) {
     bool inserted = false;
+
+    if (head == NULL && tail == NULL) {
+	head = node;
+	tail = node;
+	return;
+    }
+
     for (page_t* p = tail; p != NULL; p = p->bk) {
 	if (p->size <= node->size) {
 	    if (p->fd != NULL) {
@@ -50,8 +57,10 @@ static inline void page_insert(page_t* node) {
     /* if still not inserted then this new node is the smallest node in the list */
     if (!inserted) {
 	node->fd = head;
-	head->bk = node;
-	head = node;
+	if (head != NULL) {
+	    head->bk = node;
+	    head = node;
+	}
     }
 }
 
@@ -64,22 +73,13 @@ static inline bool morecore(size_t n) {
 	return false;
     }
     
-    if (head == NULL) {
-	head = (page_t *)m;
-	head->size = n - sizeof(page_t);
-	head->fd = NULL;
-	head->bk = NULL;
-	head->magic = PAGEMAGIC;
-	tail = head;
-    } else {
-	page_t* node = (page_t *)m;
-	node->size = n - sizeof(page_t);
-	node->fd = NULL;
-	node->bk = NULL;
-	node->magic = PAGEMAGIC;
+    page_t* node = (page_t *)m;
+    node->size = n - sizeof(page_t);
+    node->fd = NULL;
+    node->bk = NULL;
+    node->magic = PAGEMAGIC;
 
-	page_insert(node);
-    }
+    page_insert(node);
 
     return true;
 }
