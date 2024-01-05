@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <stdio.h>
 
+
 #define MMAP_FLAGS PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0
 #define MMAP(n) mmap(NULL, n, MMAP_FLAGS)
 
@@ -31,6 +32,20 @@
 page_t* head = NULL;
 page_t* tail = NULL;
 
+static inline void page_remove(page_t* node) {
+    if (node->bk)
+	node->bk->fd = node->fd;
+    if (node->fd)
+	node->fd->bk = node->bk;
+
+    if ((uintptr_t)tail == (uintptr_t)node) {
+	tail = node->bk;
+    }
+    if ((uintptr_t)head == (uintptr_t)node) {
+	head = node->fd;
+    }
+}
+
 static inline void page_insert(page_t* node) {
     bool inserted = false;
 
@@ -41,6 +56,9 @@ static inline void page_insert(page_t* node) {
     }
 
     for (page_t* p = tail; p != NULL; p = p->bk) {
+	if ((uintptr_t)node == (uintptr_t)p)
+	    /* node is already in the list, so do nothing. */
+	    return;
 	if (p->size <= node->size) {
 	    if (p->fd != NULL) {
 		node->fd = p->fd;
@@ -78,6 +96,7 @@ static inline bool morecore(size_t n) {
     node->fd = NULL;
     node->bk = NULL;
     node->magic = PAGEMAGIC;
+    node->inuse = false;
 
     page_insert(node);
 
@@ -89,12 +108,13 @@ void* smalloc(size_t n) {
     size_t na = (n + sizeof(page_t)); /* allocate enough memory for request + overhead */
     printf("::: Memory to allocate: %lu\n", na);
     for (page_t* p = head; p != NULL; p = p->fd) {
-	assert(p->magic == PAGEMAGIC); /* sanity check */
+	assert(p->magic == PAGEMAGIC); /* this should never be false */
 	if (p->size >= na) { 
 	    p->size -= na; /* Give tail end of page to caller */
 	    page_t* new = (page_t *)((char *)p + p->size);
 	    new->magic = PAGEMAGIC;
 	    new->size = na;
+	    new->inuse = true;
 	    PRINTPAGESTATS
 	    return (void*)((char *)new + sizeof(page_t));
 	}
@@ -102,12 +122,13 @@ void* smalloc(size_t n) {
     /* try one more time */
     if (morecore(na)) {
 	for (page_t* p = head; p != NULL; p = p->fd) {
-	    assert(p->magic == PAGEMAGIC); /* sanity check */
+	    assert(p->magic == PAGEMAGIC); /* this should never be false */
 	    if (p->size >= na) {
 		p->size -= na; /* Give tail end of page to caller */
 	    	page_t* new = (page_t *)((char *)p + p->size);
 		new->magic = PAGEMAGIC;
 		new->size = na;
+		new->inuse = true;
 	    	PRINTPAGESTATS
 	    	return (void*)((char *)new + sizeof(page_t));
 	   }
@@ -118,21 +139,35 @@ void* smalloc(size_t n) {
 }
 
 void sfree(void* ptr) {
+    if (ptr == NULL)
+	return;
+
     page_t* chk = (page_t *)((char *)ptr - sizeof(page_t));
+    assert(chk->inuse == true);
     assert(chk->magic == PAGEMAGIC);
+    chk->inuse = false;
 
     /* try joining upper contigious chunk */
     page_t* chk_upper = (page_t *)((char *)chk + chk->size);
-    if (chk_upper->magic == PAGEMAGIC) {
-	printf("A MAGIC?!?!?!\n");
-	//chk->size += chk_upper->size;
+    if (chk_upper->magic == PAGEMAGIC && chk_upper->inuse == false) {
+	page_remove(chk_upper);
+	printf("A (right) MAGIC?!?!?!\n");
+	chk_upper->magic = 0x0;
+	chk->size += chk_upper->size;
     }
     /* try joining lower contigious chunk */
     page_t* chk_lower = (page_t *)((char *)chk - chk->size);
-    if (chk_upper->magic == PAGEMAGIC) {
-	printf("A MAGIC AGAIN?!?!?!\n");
-	//chk->size += chk_upper->size;
+    if (chk_lower->magic == PAGEMAGIC && chk_lower->inuse == false) {
+	printf("A (left) MAGIC?!?!?!\n");
+	chk_lower->magic = 0x0;
+	chk_lower->size += chk->size;
+	chk = chk_lower;
     }
+//    if (chk_lower->magic == PAGEMAGIC && chk_lower->inuse == false) {
+//	printf("A MAGIC AGAIN?!?!?!\n");
+//	chk_lower->size += chk->size;
+//	chk = chk_lower;
+//    }
 
     page_insert(chk);
     //fprintf(stderr, "Not implemented yet!\n");
