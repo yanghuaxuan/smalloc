@@ -1,83 +1,141 @@
-#include <unistd.h>
-
 #include "smalloc.h"
 
-#define NALLOC 1024
+#include <sys/mman.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <assert.h>
+#include <stdio.h>
 
-static Header base = {0};       /* list of free blocks */
-static Header *freep = NULL;    /* pointer to last free block searched*/
+#define MMAP_FLAGS PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0
+#define MMAP(n) mmap(NULL, n, MMAP_FLAGS)
 
-/* Request block of memory */
-static Header *morecore(size_t nu) {
-    if (nu < NALLOC)
-        nu = NALLOC;
+#define PAGE 4096
+#define PAGE_ALIGNMENT (PAGE - 1)
+#define PAGE_ALIGN(N) (size_t)((N + PAGE_ALIGNMENT) & ~(PAGE_ALIGNMENT))
 
-    void *cp = sbrk(nu * sizeof(Header));
-    if (cp == (void *) -1)
-        return NULL;
-    Header *up = (Header *)cp;
-    up->s.size = nu;
-    sfree((void *)(up + 1)); /* put it into the list of free blocks */
+/* change this if size_t is not the same size as your architecture word size */
+#define WORD (sizeof(size_t))
 
-    return freep;
+#define WORD_ALIGNMENT (WORD - 1)
+#define WORD_ALIGN(N) (size_t)((N + WORD_ALIGNMENT) & ~(WORD_ALIGNMENT))
+
+#define PAGEMAGIC 0xABCD1234
+
+#define PRINTPAGESTATS \
+    printf("===== Start of PRINTPAGESTATS =====\n"); \
+    for (page_t* p = head; p != NULL; p = p->fd) { \
+	printf("--- PAGE: SZ - %lu\n", p->size); \
+    } \
+    printf("===== End of PRINTPAGESTATS =====\n"); \
+
+page_t* head = NULL;
+page_t* tail = NULL;
+
+static inline void page_insert(page_t* node) {
+    bool inserted = false;
+    for (page_t* p = tail; p != NULL; p = p->bk) {
+	if (p->size <= node->size) {
+	    if (p->fd != NULL) {
+		node->fd = p->fd;
+		p->fd->bk = node;
+	    } else {
+		tail = node;
+	    }
+	    node->bk = p;
+	    p->fd = node;
+
+	    inserted = true;
+	}
+    }
+    /* if still not inserted then this new node is the smallest node in the list */
+    if (!inserted) {
+	node->fd = head;
+	head->bk = node;
+	head = node;
+    }
 }
 
-void *smalloc(size_t n) {
-    /* round up to the proper amount of header-sized units */
-    size_t nunits = ((n + sizeof(Header) - 1) / sizeof(Header)) + 1;
-    Header *prevp = freep;
+/* always allocates PAGE_ALIGN(n) bytes of memory */
+static inline bool morecore(size_t n) {
+    n = PAGE_ALIGN(n);
+    void* m = MMAP(n);
 
-    if (freep == NULL) { /* no free list yet */
-        base.s.next = freep = prevp = &base;
-        base.s.size = 0;
+    if (m == MAP_FAILED) {
+	return false;
+    }
+    
+    if (head == NULL) {
+	head = (page_t *)m;
+	head->size = n - sizeof(page_t);
+	head->fd = NULL;
+	head->bk = NULL;
+	head->magic = PAGEMAGIC;
+	tail = head;
+    } else {
+	page_t* node = (page_t *)m;
+	node->size = n - sizeof(page_t);
+	node->fd = NULL;
+	node->bk = NULL;
+	node->magic = PAGEMAGIC;
+
+	page_insert(node);
     }
 
-    /* find big enough page */
-    for (Header *p = prevp->s.next; ;prevp = p, p = p->s.next) {
-        if(p->s.size >= nunits) {   /* big enough page found */
-            if (p->s.size == nunits)    /* exact size */
-            prevp->s.next = p->s.next;
-            else {              /* allocate tail end */
-                p->s.size -= nunits;
-                p += p->s.size;
-                p->s.size = nunits;
-            }
-
-            freep = prevp;
-            return (void *)(p+1);
-        }
-        if (p == freep) { /* wrapped back. Need to expand heap */
-            p = morecore(nunits);
-            if (p == NULL)
-                return NULL;
-        }
-    }
+    return true;
 }
 
-void sfree(void *ap) {
-    Header *bp = (Header *)ap - 1; /* pointer to block header */
+void* smalloc(size_t n) {
 
-    Header *p = freep;
-    /**
-     * iterate until we find two blocks, such that
-     * the address of bp is between the addresses
-     * of the two blocks.
-    **/
-    for (; !((bp > p) && (bp < p->s.next)); p = p->s.next)
-        if (p >= p->s.next && (bp > p || bp < p->s.next))
-            break; /* freed block at start or end of list */
+    size_t na = (n + sizeof(page_t)); /* allocate enough memory for request + overhead */
+    printf("::: Memory to allocate: %lu\n", na);
+    for (page_t* p = head; p != NULL; p = p->fd) {
+	assert(p->magic == PAGEMAGIC); /* sanity check */
+	if (p->size >= na) { 
+	    p->size -= na; /* Give tail end of page to caller */
+	    page_t* new = (page_t *)((char *)p + p->size);
+	    new->magic = PAGEMAGIC;
+	    new->size = na;
+	    PRINTPAGESTATS
+	    return (void*)((char *)new + sizeof(page_t));
+	}
+    }
+    /* try one more time */
+    if (morecore(na)) {
+	for (page_t* p = head; p != NULL; p = p->fd) {
+	    assert(p->magic == PAGEMAGIC); /* sanity check */
+	    if (p->size >= na) {
+		p->size -= na; /* Give tail end of page to caller */
+	    	page_t* new = (page_t *)((char *)p + p->size);
+		new->magic = PAGEMAGIC;
+		new->size = na;
+	    	PRINTPAGESTATS
+	    	return (void*)((char *)new + sizeof(page_t));
+	   }
+        }
+    }
 
-    if (bp + bp->s.size == p->s.next) { /* join to upper nbr */
-        bp->s.size += p->s.next->s.size;
-        bp->s.next = p->s.next->s.next;
-    } else
-        bp->s.next = p->s.next;
-    if (p + p->s.size == bp) {          /* join to lower nbr */
-        p->s.size += bp->s.size;
-        p->s.next = bp->s.next;
-    } else
-        p->s.next = bp;
+    return NULL;
+}
 
-    freep = p;
+void sfree(void* ptr) {
+    page_t* chk = (page_t *)((char *)ptr - sizeof(page_t));
+    assert(chk->magic == PAGEMAGIC);
+
+    /* try joining upper contigious chunk */
+    page_t* chk_upper = (page_t *)((char *)chk + chk->size);
+    if (chk_upper->magic == PAGEMAGIC) {
+	printf("A MAGIC?!?!?!\n");
+	//chk->size += chk_upper->size;
+    }
+    /* try joining lower contigious chunk */
+    page_t* chk_lower = (page_t *)((char *)chk - chk->size);
+    if (chk_upper->magic == PAGEMAGIC) {
+	printf("A MAGIC AGAIN?!?!?!\n");
+	//chk->size += chk_upper->size;
+    }
+
+    page_insert(chk);
+    //fprintf(stderr, "Not implemented yet!\n");
+    PRINTPAGESTATS 
 }
 

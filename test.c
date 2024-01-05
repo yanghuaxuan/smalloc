@@ -13,18 +13,24 @@ int main(void) {
   char *t2 = smalloc(420);
   strcpy(t2, "Hello world");
 
-  printf("%s", t2);
+  printf("t2: %s\n", t2);
+  assert(*t1 == 1);
 
+  char* t3 = smalloc(4096);
+  assert(t3 != NULL);
+  strcpy(t3, "This is a perfectly normal sentence!");
+
+  printf("%s\n", t3);
+
+  printf("Freeing!\n");
   sfree(t1);
   sfree(t2);
+
+  //sfree((void *)0xDEADBEEF);
 
   /* Only test these if using test smalloc()! */
 //  char *t3 = smalloc(1023 * sizeof(Header));
 //  assert(t3 != NULL);
 //  sfree(t3);
 //
-  char *t4 = smalloc(1023 * sizeof(Header));
-  char *t5 = smalloc(1024 * sizeof(Header));
-  sfree(t4);
-  sfree(t5);
 }
