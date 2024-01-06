@@ -169,7 +169,7 @@ void sfree(void* ptr) {
     foot_t* chk_lower = (foot_t *)((char *)chk - sizeof(foot_t));
     if (chk_lower->magic == PAGEMAGIC && chk_lower->head->inuse == false) {
 	printf("A (left) MAGIC?!?!?!\n");
-	chk_lower->head->size += sizeof(page_t) + chk->size;
+	chk_lower->head->size += sizeof(page_t) + chk->size + sizeof(foot_t);
 //	foot_t* chk_lower_foot = (foot_t *)((char *)chk_lower->head + chk_lower->head->size);
 //	chk_lower_foot->head = chk_lower->head;
 //	chk_lower_foot->magic = PAGEMAGIC;
