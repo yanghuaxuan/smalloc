@@ -185,7 +185,6 @@ void sfree(void* ptr) {
     /* try joining lower contigious chunk */
     foot_t* chk_lower = (foot_t *)((char *)chk - sizeof(foot_t));
     if (chk_lower->magic == PAGEMAGIC && chk_lower->head->inuse == false) {
-	printf("A (left) MAGIC?!?!?!\n");
 	chk_lower->head->size += sizeof(chunk_t) + chk->size + sizeof(foot_t);
 	chk_footer->magic = PAGEMAGIC;
 	chk_footer->head = chk_lower->head;
@@ -198,7 +197,6 @@ void sfree(void* ptr) {
     chunk_t* chk_upper = (chunk_t *)((char *)chk_footer + sizeof(foot_t));
     if (chk_upper->magic == PAGEMAGIC && chk_upper->inuse == false) {
 	page_remove(chk_upper);
-	printf("A (right) MAGIC?!?!?!\n");
 	chk->size += sizeof(chunk_t) + chk_upper->size + sizeof(foot_t);
     }
 
