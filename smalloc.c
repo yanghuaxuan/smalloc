@@ -92,29 +92,47 @@ static inline bool morecore(size_t n) {
     }
     
     page_t* node = (page_t *)m;
-    node->size = n - sizeof(page_t);
+    node->size = n - sizeof(page_t) - sizeof(foot_t);
     node->fd = NULL;
     node->bk = NULL;
     node->magic = PAGEMAGIC;
     node->inuse = false;
+
+    foot_t* foot = (foot_t *)((char *)node + sizeof(page_t) + node->size);
+    foot->magic = PAGEMAGIC;
+    foot->head = node;
 
     page_insert(node);
 
     return true;
 }
 
+#define DOALLOC \
+    p->size += sizeof(foot_t); \
+    p->size -= na ; /* Give tail end of page to caller */ \
+    page_t* new = (page_t *)((char *)p + p->size); \
+    new->magic = PAGEMAGIC; \
+    new->size = n; \
+    new->inuse = true; \
+    new->fd = NULL; \
+    new->bk = NULL; \
+    foot_t* new_foot = (foot_t *)((char *)new + sizeof(page_t ) + new->size ); \
+    new_foot->magic = PAGEMAGIC; \
+    new_foot->head = new; \
+    p->size -= sizeof(foot_t); \
+    foot_t* p_foot = (foot_t *)((char *)p + p->size); \
+    p_foot->magic = PAGEMAGIC; \
+    p_foot->head = p; \
+
+/* TODO: Move foot everytiem */
 void* smalloc(size_t n) {
 
-    size_t na = (n + sizeof(page_t)); /* allocate enough memory for request + overhead */
+    size_t na = (sizeof(page_t) + n + sizeof(foot_t)); /* allocate enough memory for request + overhead */
     printf("::: Memory to allocate: %lu\n", na);
     for (page_t* p = head; p != NULL; p = p->fd) {
 	assert(p->magic == PAGEMAGIC); /* this should never be false */
 	if (p->size >= na) { 
-	    p->size -= na; /* Give tail end of page to caller */
-	    page_t* new = (page_t *)((char *)p + p->size);
-	    new->magic = PAGEMAGIC;
-	    new->size = na;
-	    new->inuse = true;
+	    DOALLOC
 	    PRINTPAGESTATS
 	    return (void*)((char *)new + sizeof(page_t));
 	}
@@ -122,16 +140,11 @@ void* smalloc(size_t n) {
     /* try one more time */
     if (morecore(na)) {
 	for (page_t* p = head; p != NULL; p = p->fd) {
-	    assert(p->magic == PAGEMAGIC); /* this should never be false */
-	    if (p->size >= na) {
-		p->size -= na; /* Give tail end of page to caller */
-	    	page_t* new = (page_t *)((char *)p + p->size);
-		new->magic = PAGEMAGIC;
-		new->size = na;
-		new->inuse = true;
-	    	PRINTPAGESTATS
-	    	return (void*)((char *)new + sizeof(page_t));
-	   }
+	    if (p->size >= na) { 
+		DOALLOC
+		PRINTPAGESTATS
+		return (void*)((char *)new + sizeof(page_t));
+	    }
         }
     }
 
@@ -142,26 +155,28 @@ void sfree(void* ptr) {
     if (ptr == NULL)
 	return;
 
+    bool insert_page = true;
+
     page_t* chk = (page_t *)((char *)ptr - sizeof(page_t));
-    assert(chk->inuse == true);
-    assert(chk->magic == PAGEMAGIC);
+    assert(chk->magic == PAGEMAGIC); /* invalid chunk pointer */
     chk->inuse = false;
 
+    /* try joining lower contigious chunk */
+    foot_t* chk_lower = (foot_t *)((char *)chk - sizeof(foot_t));
+    if (chk_lower->magic == PAGEMAGIC && chk_lower->head->inuse == false) {
+	printf("A (left) MAGIC?!?!?!\n");
+	chk_lower->head->size += sizeof(page_t) + chk->size + sizeof(foot_t);
+	foot_t* chk_lower_foot = (foot_t *)((char *)chk_lower->head + chk_lower->head->size - sizeof(foot_t));
+	chk_lower_foot->head = chk_lower->head;
+	chk_lower_foot->magic = PAGEMAGIC;
+	insert_page = false;
+    }
     /* try joining upper contigious chunk */
-    page_t* chk_upper = (page_t *)((char *)chk + chk->size);
+    page_t* chk_upper = (page_t *)((char *)chk + sizeof(page_t) + chk->size + sizeof(foot_t));
     if (chk_upper->magic == PAGEMAGIC && chk_upper->inuse == false) {
 	page_remove(chk_upper);
 	printf("A (right) MAGIC?!?!?!\n");
-	chk_upper->magic = 0x0;
 	chk->size += chk_upper->size;
-    }
-    /* try joining lower contigious chunk */
-    page_t* chk_lower = (page_t *)((char *)chk - chk->size);
-    if (chk_lower->magic == PAGEMAGIC && chk_lower->inuse == false) {
-	printf("A (left) MAGIC?!?!?!\n");
-	chk_lower->magic = 0x0;
-	chk_lower->size += chk->size;
-	chk = chk_lower;
     }
 //    if (chk_lower->magic == PAGEMAGIC && chk_lower->inuse == false) {
 //	printf("A MAGIC AGAIN?!?!?!\n");
@@ -169,7 +184,8 @@ void sfree(void* ptr) {
 //	chk = chk_lower;
 //    }
 
-    page_insert(chk);
+    if (insert_page)
+	page_insert(chk);
     //fprintf(stderr, "Not implemented yet!\n");
     PRINTPAGESTATS 
 }

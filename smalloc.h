@@ -12,6 +12,11 @@ typedef struct page {
     struct page*	bk;
 } page_t;
 
+typedef struct foot {
+    unsigned long 	magic;
+    page_t*		head;
+} foot_t;
+
 void* smalloc(size_t n);
 void sfree(void* ptr);
 
