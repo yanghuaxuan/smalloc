@@ -31,11 +31,5 @@ int main(void) {
   sfree(t3);
   sfree(t4);
 
-  //sfree((void *)0xDEADBEEF);
-
-  /* Only test these if using test smalloc()! */
-//  char *t3 = smalloc(1023 * sizeof(Header));
-//  assert(t3 != NULL);
-//  sfree(t3);
-//
+  sfree(NULL);
 }
