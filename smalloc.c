@@ -151,6 +151,7 @@ void* smalloc(size_t n) {
     return NULL;
 }
 
+/* TODO: Cleanup code */
 void sfree(void* ptr) {
     if (ptr == NULL)
 	return;
@@ -161,22 +162,30 @@ void sfree(void* ptr) {
     assert(chk->magic == PAGEMAGIC); /* invalid chunk pointer */
     chk->inuse = false;
 
+    foot_t* chk_footer = (foot_t *)((char *)chk + sizeof(page_t) + chk->size);
+    assert(chk_footer->magic == PAGEMAGIC);
+
     /* try joining lower contigious chunk */
     foot_t* chk_lower = (foot_t *)((char *)chk - sizeof(foot_t));
     if (chk_lower->magic == PAGEMAGIC && chk_lower->head->inuse == false) {
 	printf("A (left) MAGIC?!?!?!\n");
-	chk_lower->head->size += sizeof(page_t) + chk->size + sizeof(foot_t);
-	foot_t* chk_lower_foot = (foot_t *)((char *)chk_lower->head + chk_lower->head->size - sizeof(foot_t));
-	chk_lower_foot->head = chk_lower->head;
-	chk_lower_foot->magic = PAGEMAGIC;
+	chk_lower->head->size += sizeof(page_t) + chk->size;
+//	foot_t* chk_lower_foot = (foot_t *)((char *)chk_lower->head + chk_lower->head->size);
+//	chk_lower_foot->head = chk_lower->head;
+//	chk_lower_foot->magic = PAGEMAGIC;
+	chk_footer->magic = PAGEMAGIC;
+	chk_footer->head = chk_lower->head;
 	insert_page = false;
+
+	chk = chk_footer->head;
+
     }
     /* try joining upper contigious chunk */
-    page_t* chk_upper = (page_t *)((char *)chk + sizeof(page_t) + chk->size + sizeof(foot_t));
+    page_t* chk_upper = (page_t *)((char *)chk_footer + sizeof(foot_t));
     if (chk_upper->magic == PAGEMAGIC && chk_upper->inuse == false) {
 	page_remove(chk_upper);
 	printf("A (right) MAGIC?!?!?!\n");
-	chk->size += chk_upper->size;
+	chk->size += sizeof(page_t) + chk_upper->size + sizeof(foot_t);
     }
 //    if (chk_lower->magic == PAGEMAGIC && chk_lower->inuse == false) {
 //	printf("A MAGIC AGAIN?!?!?!\n");

@@ -25,6 +25,7 @@ int main(void) {
   printf("Freeing!\n");
   sfree(t1);
   sfree(t2);
+  sfree(t3);
 
   //sfree((void *)0xDEADBEEF);
 
