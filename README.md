@@ -1,2 +1,2 @@
 # (s)mol (malloc)ator
-Simple K&R implementation of malloc with maybe some optimizations and changes to get it to compile.
+Simple and portable best-fit memory allocator written in C99
