@@ -4,17 +4,17 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-typedef struct page {
+typedef struct chunk {
     size_t 		size;
     unsigned long 	magic;
     bool		inuse;
-    struct page*	fd;
-    struct page*	bk;
-} page_t;
+    struct chunk*	fd;
+    struct chunk*	bk;
+} chunk_t;
 
 typedef struct foot {
     unsigned long 	magic;
-    page_t*		head;
+    chunk_t*		head;
 } foot_t;
 
 void* smalloc(size_t n);
