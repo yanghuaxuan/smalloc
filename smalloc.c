@@ -174,7 +174,8 @@ void sfree(void* ptr) {
     bool insert_page = true;
 
     chunk_t* chk = (chunk_t *)((char *)ptr - sizeof(chunk_t));
-    assert(chk->magic == PAGEMAGIC); /* invalid chunk pointer */
+    assert(chk->magic == PAGEMAGIC); /* invalid chunk pointer check */
+    assert(chk->inuse != false); /* double free check */
     chk->inuse = false;
 
     foot_t* chk_footer = (foot_t *)((char *)chk + sizeof(chunk_t) + chk->size);
