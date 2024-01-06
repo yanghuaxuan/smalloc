@@ -107,48 +107,52 @@ static inline bool morecore(size_t n) {
     return true;
 }
 
-#define DOALLOC \
-    p->size += sizeof(foot_t); \
-    p->size -= na ; /* Give tail end of page to caller */ \
-    page_t* new = (page_t *)((char *)p + p->size); \
-    new->magic = PAGEMAGIC; \
-    new->size = n; \
-    new->inuse = true; \
-    new->fd = NULL; \
-    new->bk = NULL; \
-    foot_t* new_foot = (foot_t *)((char *)new + sizeof(page_t ) + new->size ); \
-    new_foot->magic = PAGEMAGIC; \
-    new_foot->head = new; \
-    p->size -= sizeof(foot_t); \
-    foot_t* p_foot = (foot_t *)((char *)p + p->size); \
-    p_foot->magic = PAGEMAGIC; \
-    p_foot->head = p; \
+/* search for the first block that is >= size and return that block */
+static inline page_t* page_search(size_t size) {
+    for (page_t* p = head; p != NULL; p = p->fd) {
+	assert(p->magic == PAGEMAGIC); /* this should never be false */
+	if (p->size >= size) { 
+	    return p;
+	}
+    }
+    return NULL;
+}
 
 /* TODO: Move foot everytiem */
 void* smalloc(size_t n) {
 
     size_t na = (sizeof(page_t) + n + sizeof(foot_t)); /* allocate enough memory for request + overhead */
     printf("::: Memory to allocate: %lu\n", na);
-    for (page_t* p = head; p != NULL; p = p->fd) {
-	assert(p->magic == PAGEMAGIC); /* this should never be false */
-	if (p->size >= na) { 
-	    DOALLOC
-	    PRINTPAGESTATS
-	    return (void*)((char *)new + sizeof(page_t));
+    page_t* chk = page_search(na);
+    if (chk == NULL) {
+	if (morecore(na)) {
+	    /* try one more time */
+	    chk = page_search(na);
+	} else {
+	    return NULL;
 	}
     }
-    /* try one more time */
-    if (morecore(na)) {
-	for (page_t* p = head; p != NULL; p = p->fd) {
-	    if (p->size >= na) { 
-		DOALLOC
-		PRINTPAGESTATS
-		return (void*)((char *)new + sizeof(page_t));
-	    }
-        }
-    }
 
-    return NULL;
+    chk->size += sizeof(foot_t); 
+    chk->size -= na ; /* give tail end of page to caller */
+
+    page_t* new = (page_t *)((char *)chk + chk->size);
+    new->magic = PAGEMAGIC;
+    new->size = n;
+    new->inuse = true;
+    new->fd = NULL;
+    new->bk = NULL;
+
+    foot_t* new_foot = (foot_t *)((char *)new + sizeof(page_t ) + new->size );
+    new_foot->magic = PAGEMAGIC;
+    new_foot->head = new;
+
+    chk->size -= sizeof(foot_t);
+    foot_t* chk_foot = (foot_t *)((char *)chk + chk->size);
+    chk_foot->magic = PAGEMAGIC;
+    chk_foot->head = chk;
+
+    return (void *)((char *)new + sizeof(page_t));
 }
 
 /* TODO: Cleanup code */
@@ -170,9 +174,6 @@ void sfree(void* ptr) {
     if (chk_lower->magic == PAGEMAGIC && chk_lower->head->inuse == false) {
 	printf("A (left) MAGIC?!?!?!\n");
 	chk_lower->head->size += sizeof(page_t) + chk->size + sizeof(foot_t);
-//	foot_t* chk_lower_foot = (foot_t *)((char *)chk_lower->head + chk_lower->head->size);
-//	chk_lower_foot->head = chk_lower->head;
-//	chk_lower_foot->magic = PAGEMAGIC;
 	chk_footer->magic = PAGEMAGIC;
 	chk_footer->head = chk_lower->head;
 	insert_page = false;
@@ -187,15 +188,9 @@ void sfree(void* ptr) {
 	printf("A (right) MAGIC?!?!?!\n");
 	chk->size += sizeof(page_t) + chk_upper->size + sizeof(foot_t);
     }
-//    if (chk_lower->magic == PAGEMAGIC && chk_lower->inuse == false) {
-//	printf("A MAGIC AGAIN?!?!?!\n");
-//	chk_lower->size += chk->size;
-//	chk = chk_lower;
-//    }
 
     if (insert_page)
 	page_insert(chk);
-    //fprintf(stderr, "Not implemented yet!\n");
     PRINTPAGESTATS 
 }
 
