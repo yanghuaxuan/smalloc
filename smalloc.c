@@ -131,7 +131,6 @@ static inline chunk_t* page_search(size_t size) {
     return NULL;
 }
 
-/* TODO: Move foot everytiem */
 void* smalloc(size_t n) {
 
     size_t na = (sizeof(chunk_t) + n + sizeof(foot_t)); /* allocate enough memory for request + overhead */
@@ -168,7 +167,6 @@ void* smalloc(size_t n) {
     return (void *)((char *)new + sizeof(chunk_t));
 }
 
-/* TODO: Cleanup code */
 void sfree(void* ptr) {
     if (ptr == NULL)
 	return;
