@@ -20,12 +20,16 @@ int main(void) {
   assert(t3 != NULL);
   strcpy(t3, "This is a perfectly normal sentence!");
 
+  char* t4 = smalloc(8);
+  assert(t4 != NULL);
+
   printf("%s\n", t3);
 
   printf("Freeing!\n");
   sfree(t1);
   sfree(t2);
   sfree(t3);
+  sfree(t4);
 
   //sfree((void *)0xDEADBEEF);
 
